@@ -30,4 +30,4 @@ figuring out where privacy actually breaks in NLG systems.
 
 ## Reach me
 
-[LinkedIn](https://www.linkedin.com/in/mittalnitya/) · abstars12345@gmail.com
+[LinkedIn](https://www.linkedin.com/in/mittalnitya/)
