@@ -5,7 +5,7 @@ Ann Arbor, Michigan
 nityamittal2000@gmail.com | +1 (734) 773-9430
 [LinkedIn](https://www.linkedin.com/in/mittalnitya/) | [Portfolio](https://nityamittal.github.io/portfolio/index.html) | [GitHub](https://github.com/nityamittal)
 
-July 18, 2026
+July 20, 2026
 
 To: shan@hmsnt.com
 
