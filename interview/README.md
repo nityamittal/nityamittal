@@ -1,6 +1,6 @@
-# Two interview questions
+# Interview questions
 
-Reconstruction of two problems from an interview round, with optimal solutions
+Reconstruction of three problems from interview rounds, with optimal solutions
 and brute-force cross-checks.
 
 ```
@@ -100,9 +100,49 @@ objective actually moves on** — the per-item cost, the difference `A[i] − B[
 or the pooled value — and let a greedy or window pass do the rest. Only the
 pairing objective in C resists that and needs the DP.
 
+---
+
+## Question 3 — Is an `m × n` board a valid chessboard?
+
+Valid means the two colors strictly alternate, so every cell differs from its
+orthogonal neighbours. Equivalently, one corner plus parity fixes the whole
+board:
+
+```
+grid[i][j] == grid[0][0] XOR ((i + j) & 1)
+```
+
+The achievable complexity depends on how the board is handed to you, and the
+distinction matters:
+
+| representation | cost | function |
+| --- | --- | --- |
+| dense grid of `m·n` cells | **Θ(m·n)** — and that is optimal | `is_valid_chessboard` |
+| `m` rows packed as `n`-bit integers | **O(m + n)** | `is_valid_chessboard_bitmask` |
+
+**The O(m + n) result is the packed representation.** Row `i` is validated by a
+single integer comparison against row 0 or its complement, so only row 0's own
+alternation costs `O(n)`. Necessary and sufficient conditions:
+
+1. row 0 alternates — `(r ^ (r >> 1)) & ((1 << (n-1)) - 1) == (1 << (n-1)) - 1`;
+2. every row equals row 0 (even index) or its complement (odd index), which is
+   the column-alternation condition, one word at a time.
+
+**A dense grid cannot beat Θ(m·n).** Any algorithm that leaves a cell unread
+loses to an adversary flipping that cell. In particular, checking only row 0
+and column 0 is not sufficient — a claim that shows up in write-ups of this
+problem, and `[[0, 1], [1, 1]]` refutes it: perfect first row, perfect first
+column, not a chessboard.
+
+Two other traps the tests cover: a `1 × 1` board is vacuously valid, and
+"all neighbours differ" is weaker than "is a chessboard" once more than two
+colors are in play — `[[0, 1], [2, 0]]` has every neighbour differing and is
+still not one, so the color count has to be checked too.
+
 ## Sources
 
 - [LeetCode 849 — Maximize Distance to Closest Person](https://leetcode.com/problems/maximize-distance-to-closest-person/)
 - [LeetCode 1029 — Two City Scheduling](https://algo.monster/liteproblems/1029)
 - [Chocolate Distribution Problem — GeeksforGeeks](https://www.geeksforgeeks.org/dsa/chocolate-distribution-problem/)
 - [LeetCode 1231 — Divide Chocolate](https://algo.monster/liteproblems/1231)
+- [Check if the given chessboard is valid or not — GeeksforGeeks](https://www.geeksforgeeks.org/dsa/check-if-the-given-chessboard-is-valid-or-not/)

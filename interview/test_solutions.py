@@ -6,6 +6,11 @@ Run with `python3 interview/test_solutions.py` (no test framework required).
 import random
 from itertools import combinations, permutations, product
 
+from chessboard_valid import (
+    is_valid_chessboard,
+    is_valid_chessboard_bitmask,
+    pack_rows,
+)
 from seat_distance import best_seat_one_pass, best_seat_two_pass
 from sweetness_distribution import (
     min_spread,
@@ -62,6 +67,22 @@ def brute_spread(A, B, M):
     return min(max(c) - min(c) for c in combinations(pool, M))
 
 
+def brute_chessboard(grid):
+    """Definition: exactly two colors, and every orthogonal neighbour differs."""
+    if not grid or not grid[0]:
+        return False
+    m, n = len(grid), len(grid[0])
+    if len({c for row in grid for c in row}) > 2:
+        return False
+    for i in range(m):
+        for j in range(n):
+            if i + 1 < m and grid[i][j] == grid[i + 1][j]:
+                return False
+            if j + 1 < n and grid[i][j] == grid[i][j + 1]:
+                return False
+    return True
+
+
 # --- checks -----------------------------------------------------------------
 
 def check_seats():
@@ -103,8 +124,40 @@ def check_sweetness():
     print("sweetness variants A-D: optimal solutions match brute force")
 
 
+def check_chessboard():
+    # the case that kills "just check row 0 and column 0"
+    assert is_valid_chessboard([[0, 1], [1, 1]]) is False
+    # three colors with all neighbours differing is still not a chessboard
+    assert brute_chessboard([[0, 1], [2, 0]]) is False
+    assert is_valid_chessboard([[0, 1], [2, 0]]) is False
+    assert is_valid_chessboard([[7]]) is True
+    assert is_valid_chessboard([]) is False
+    assert is_valid_chessboard([[0, 1], [1]]) is False  # ragged
+
+    # exhaustive over every two-color board up to 4x4
+    boards = 0
+    for m in range(1, 5):
+        for n in range(1, 5):
+            for bits in product((0, 1), repeat=m * n):
+                grid = [list(bits[i * n:(i + 1) * n]) for i in range(m)]
+                expected = brute_chessboard(grid)
+                assert is_valid_chessboard(grid) == expected, grid
+                rows, width = pack_rows(grid, 1)
+                assert is_valid_chessboard_bitmask(rows, width) == expected, grid
+                boards += 1
+    print(f"chessboard: dense and bitmask agree with brute force on {boards} boards")
+
+    # random three-color boards, where the parity shortcut alone is not enough
+    for _ in range(2000):
+        m, n = random.randint(1, 5), random.randint(1, 5)
+        grid = [[random.choice("BWX") for _ in range(n)] for _ in range(m)]
+        assert is_valid_chessboard(grid) == brute_chessboard(grid), grid
+    print("chessboard: dense check handles boards with a third color")
+
+
 if __name__ == "__main__":
     random.seed(0)
     check_seats()
     check_sweetness()
+    check_chessboard()
     print("all checks passed")
