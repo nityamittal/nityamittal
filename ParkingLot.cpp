@@ -80,19 +80,6 @@ class ParkingLot {
 
     ParkingLot() = default;
 
-    // Internal lookups: the caller only ever deals in spot ids.
-    ParkingSpot* findFreeSpot(VehicleType type) {
-        for (auto& s : spots_)
-            if (!s.occupied && s.type == type) return &s;
-        return nullptr;
-    }
-
-    ParkingSpot* findSpotById(int spotId) {
-        for (auto& s : spots_)
-            if (s.id == spotId) return &s;
-        return nullptr;
-    }
-
 public:
     ParkingLot(const ParkingLot&) = delete;
     ParkingLot& operator=(const ParkingLot&) = delete;
@@ -109,24 +96,27 @@ public:
     // Returns true and prints where the vehicle parked (remember the spot id,
     // that is your "ticket"), or false if the lot is full for this type.
     bool parkVehicle(Vehicle vehicle) {
-        ParkingSpot* spot = findFreeSpot(vehicle.type);
-        if (!spot) {
-            cout << "No free spot for " << toString(vehicle.type) << "!\n";
-            return false;
+        for (auto& spot : spots_) {
+            if (spot.occupied || spot.type != vehicle.type) continue;
+            spot.park(vehicle);
+            cout << toString(vehicle.type) << " " << vehicle.plate
+                 << " parked at spot " << spot.id << "\n";
+            return true;
         }
-        spot->park(vehicle);
-        cout << toString(vehicle.type) << " " << vehicle.plate
-             << " parked at spot " << spot->id << "\n";
-        return true;
+        cout << "No free spot for " << toString(vehicle.type) << "!\n";
+        return false;
     }
 
     void exitVehicle(int spotId, PaymentStrategy& payment) {
-        ParkingSpot* spot = findSpotById(spotId);
-        if (!spot || !spot->occupied) throw runtime_error("Invalid or already-vacant spot");
-
-        double fee = feeStrategy_.calculateFee(spot->type, spot->entryTime, time(nullptr));
-        payment.pay(fee);
-        spot->vacate();
+        for (auto& spot : spots_) {
+            if (spot.id != spotId) continue;
+            if (!spot.occupied) break;
+            double fee = feeStrategy_.calculateFee(spot.type, spot.entryTime, time(nullptr));
+            payment.pay(fee);
+            spot.vacate();
+            return;
+        }
+        throw runtime_error("Invalid or already-vacant spot");
     }
 };
 
