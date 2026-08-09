@@ -21,7 +21,7 @@ struct Vehicle {
 class FeeStrategy {
 public:
     virtual ~FeeStrategy() = default;
-    virtual double calculateFee(VehicleType type, long durationMinutes) const = 0;
+    virtual double calculateFee(VehicleType type, time_t entryTime, time_t exitTime) const = 0;
 };
 
 class HourlyRateFeeStrategy : public FeeStrategy {
@@ -29,8 +29,9 @@ class HourlyRateFeeStrategy : public FeeStrategy {
         {VehicleType::BIKE, 5.0}, {VehicleType::CAR, 10.0}, {VehicleType::TRUCK, 20.0},
     };
 public:
-    double calculateFee(VehicleType type, long durationMinutes) const override {
-        double hours = max(1.0, ceil(durationMinutes / 60.0)); // minimum 1 hour billed
+    double calculateFee(VehicleType type, time_t entryTime, time_t exitTime) const override {
+        double minutes = difftime(exitTime, entryTime) / 60.0;
+        double hours = max(1.0, ceil(minutes / 60.0)); // minimum 1 hour billed
         return hours * ratePerHour_.at(type);
     }
 };
@@ -126,8 +127,7 @@ public:
         ParkingSpot* spot = findSpotById(spotId);
         if (!spot || !spot->occupied) throw runtime_error("Invalid or already-vacant spot");
 
-        long durationMinutes = (long)difftime(time(nullptr), spot->entryTime) / 60;
-        double fee = feeStrategy_.calculateFee(spot->type, durationMinutes);
+        double fee = feeStrategy_.calculateFee(spot->type, spot->entryTime, time(nullptr));
         payment.pay(fee);
         spot->vacate();
     }
