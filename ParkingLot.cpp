@@ -25,14 +25,15 @@ public:
 };
 
 class HourlyRateFeeStrategy : public FeeStrategy {
-    unordered_map<VehicleType, double> ratePerHour_ = {
-        {VehicleType::BIKE, 5.0}, {VehicleType::CAR, 10.0}, {VehicleType::TRUCK, 20.0},
-    };
+    double ratePerHour(VehicleType type) const {
+        if (type == VehicleType::BIKE) return 5.0;
+        if (type == VehicleType::CAR) return 10.0;
+        return 20.0;
+    }
 public:
     double calculateFee(VehicleType type, time_t entryTime, time_t exitTime) const override {
-        double minutes = difftime(exitTime, entryTime) / 60.0;
-        double hours = max(1.0, ceil(minutes / 60.0)); // minimum 1 hour billed
-        return hours * ratePerHour_.at(type);
+        double hours = max(1.0, ceil(difftime(exitTime, entryTime) / (60.0 * 60))); // minimum 1 hour billed
+        return hours * ratePerHour(type);
     }
 };
 
