@@ -2,197 +2,131 @@
 using namespace std;
 
 /*
-vending machine - State design pattern
-
-states : NO_COIN -> HAS_COIN -> DISPENSE -> (NO_COIN | SOLD_OUT), SOLD_OUT --refill--> NO_COIN
-actions: insertCoin, selectItem, dispense, returnCoin, refill
-
-rule: every action RETURNS the next state, machine just stores whatever it gets back.
-      an action that is not allowed in a state returns the same state (with a message).
-      machine is a dumb object - it only delegates, states hold all the logic.
+vending machine - State pattern
+NO_COIN --insertCoin--> HAS_COIN --selectItem--> DISPENSE --dispense--> NO_COIN / SOLD_OUT --refill--> NO_COIN
+every action returns the NEXT state; machine only delegates, states hold the logic.
+anything not allowed in a state returns the same state.
 */
 
 class VendingMachine;
 
-//State
-class VendingState{
+class State{
     public:
-    virtual ~VendingState() = default;
+    virtual ~State() = default;
     virtual string name() = 0;
-
-    //by default an action is not allowed -> say why and stay in the same state
-    virtual VendingState* insertCoin(VendingMachine& m, int coin) { return reject("insert coin"); }
-    virtual VendingState* selectItem(VendingMachine& m) { return reject("select item"); }
-    virtual VendingState* dispense(VendingMachine& m) { return reject("dispense"); }
-    virtual VendingState* returnCoin(VendingMachine& m) { return reject("return coin"); }
-    virtual VendingState* refill(VendingMachine& m, int qty) { return reject("refill"); }
+    virtual State* insertCoin(VendingMachine& m, int coin) { return no("insert coin"); }
+    virtual State* selectItem(VendingMachine& m) { return no("select item"); }
+    virtual State* dispense(VendingMachine& m) { return no("dispense"); }
+    virtual State* returnCoin(VendingMachine& m) { return no("return coin"); }
+    virtual State* refill(VendingMachine& m, int qty) { return no("refill"); }
 
     protected:
-    VendingState* reject(string action)
-    {
-        cout<<"Cannot "<<action<<" in "<<name()<<" state\n";
-        return this;
-    }
+    State* no(string a) { cout<<"Cannot "<<a<<" in "<<name()<<endl; return this; }
 };
 
-//each concrete state overrides ONLY the actions it supports
-class NoCoinState: public VendingState{
-    public:
+//each state overrides ONLY the actions it allows
+struct NoCoin: State{
     string name() override { return "NO_COIN"; }
-    VendingState* insertCoin(VendingMachine& m, int coin) override;
-    VendingState* refill(VendingMachine& m, int qty) override;
+    State* insertCoin(VendingMachine& m, int coin) override;
+    State* refill(VendingMachine& m, int qty) override;
 };
-
-class HasCoinState: public VendingState{
-    public:
+struct HasCoin: State{
     string name() override { return "HAS_COIN"; }
-    VendingState* insertCoin(VendingMachine& m, int coin) override;
-    VendingState* selectItem(VendingMachine& m) override;
-    VendingState* returnCoin(VendingMachine& m) override;
+    State* insertCoin(VendingMachine& m, int coin) override;
+    State* selectItem(VendingMachine& m) override;
+    State* returnCoin(VendingMachine& m) override;
 };
-
-class DispenseState: public VendingState{
-    public:
+struct Dispensing: State{
     string name() override { return "DISPENSE"; }
-    VendingState* dispense(VendingMachine& m) override;
+    State* dispense(VendingMachine& m) override;
 };
-
-class SoldOutState: public VendingState{
-    public:
+struct SoldOut: State{
     string name() override { return "SOLD_OUT"; }
-    VendingState* refill(VendingMachine& m, int qty) override;
+    State* refill(VendingMachine& m, int qty) override;
 };
 
 //Context
 class VendingMachine{
-    VendingState* state;
-    int items;
-    int price;
-    int coins = 0;
-
+    State* state;
     public:
-    //one object per state, created once and reused
-    NoCoinState noCoin;
-    HasCoinState hasCoin;
-    DispenseState dispensing;
-    SoldOutState soldOut;
+    int items, price, coins = 0;
+    NoCoin noCoin;  HasCoin hasCoin;  Dispensing dispensing;  SoldOut soldOut;
 
     VendingMachine(int items, int price): items(items), price(price)
     {
-        state = (items>0)?(VendingState*)&noCoin:(VendingState*)&soldOut;
+        state = (items>0)?(State*)&noCoin:(State*)&soldOut;
     }
 
-    //---- delegate everything to the current state, store the returned state ----
-    void insertCoin(int coin) { state = state->insertCoin(*this, coin); }
-    void selectItem() { state = state->selectItem(*this); }
-    void dispense() { state = state->dispense(*this); }
-    void returnCoin() { state = state->returnCoin(*this); }
-    void refill(int qty) { state = state->refill(*this, qty); }
+    void insertCoin(int c) { state = state->insertCoin(*this, c); }
+    void selectItem()      { state = state->selectItem(*this); }
+    void dispense()        { state = state->dispense(*this); }
+    void returnCoin()      { state = state->returnCoin(*this); }
+    void refill(int qty)   { state = state->refill(*this, qty); }
 
-    //---- helpers the states operate on ----
-    int getPrice() { return price; }
-    int getCoins() { return coins; }
-    void addCoins(int c) { coins += c; }
-    void clearCoins() { coins = 0; }
-    int getItems() { return items; }
-    void addItems(int n) { items += n; }
-    void removeItem() { items--; }
-
-    void status() { cout<<"   [items="<<items<<", coins=$"<<coins<<", state="<<state->name()<<"]\n"; }
+    void status() { cout<<"[items="<<items<<", coins="<<coins<<", state="<<state->name()<<"]\n"; }
 };
 
-VendingState* NoCoinState::insertCoin(VendingMachine& m, int coin)
+State* NoCoin::insertCoin(VendingMachine& m, int coin)
 {
-    m.addCoins(coin);
-    cout<<"Coin inserted, balance = $"<<m.getCoins()<<endl;
+    m.coins += coin;
+    cout<<"Balance = "<<m.coins<<endl;
     return &m.hasCoin;
 }
+State* NoCoin::refill(VendingMachine& m, int qty) { m.items += qty; return this; }
 
-VendingState* NoCoinState::refill(VendingMachine& m, int qty)
+State* HasCoin::insertCoin(VendingMachine& m, int coin)
 {
-    m.addItems(qty);
-    cout<<"Refilled, items = "<<m.getItems()<<endl;
-    return this;                        //machine is still idle
+    m.coins += coin;
+    cout<<"Balance = "<<m.coins<<endl;
+    return this;                                    //more coins, same state
 }
-
-VendingState* HasCoinState::insertCoin(VendingMachine& m, int coin)
+State* HasCoin::selectItem(VendingMachine& m)
 {
-    m.addCoins(coin);
-    cout<<"Coin inserted, balance = $"<<m.getCoins()<<endl;
-    return this;                        //more coins are fine, no state change
-}
-
-VendingState* HasCoinState::selectItem(VendingMachine& m)
-{
-    if(m.getCoins()<m.getPrice())
+    if(m.coins<m.price)
     {
-        cout<<"Insufficient funds, need $"<<(m.getPrice()-m.getCoins())<<" more\n";
+        cout<<"Need "<<(m.price-m.coins)<<" more\n";
         return this;
     }
     cout<<"Item selected\n";
     return &m.dispensing;
 }
-
-VendingState* HasCoinState::returnCoin(VendingMachine& m)
+State* HasCoin::returnCoin(VendingMachine& m)
 {
-    cout<<"Returned $"<<m.getCoins()<<endl;
-    m.clearCoins();
+    cout<<"Returned "<<m.coins<<endl;
+    m.coins = 0;
     return &m.noCoin;
 }
 
-VendingState* DispenseState::dispense(VendingMachine& m)
+State* Dispensing::dispense(VendingMachine& m)
 {
-    int change = m.getCoins()-m.getPrice();
-    m.clearCoins();
-    m.removeItem();
-
-    cout<<"Item dispensed";
-    if(change>0) cout<<", change = $"<<change;
-    cout<<endl;
-
-    return (m.getItems()>0)?(VendingState*)&m.noCoin:(VendingState*)&m.soldOut;
+    int change = m.coins-m.price;
+    m.coins = 0;
+    m.items--;
+    cout<<"Dispensed, change = "<<change<<endl;
+    return (m.items>0)?(State*)&m.noCoin:(State*)&m.soldOut;
 }
 
-VendingState* SoldOutState::refill(VendingMachine& m, int qty)
-{
-    m.addItems(qty);
-    cout<<"Refilled, items = "<<m.getItems()<<endl;
-    return &m.noCoin;
-}
+State* SoldOut::refill(VendingMachine& m, int qty) { m.items += qty; return &m.noCoin; }
 
 int main()
 {
-    VendingMachine machine(2, 20);      //2 water bottles, $20 each
-    machine.status();
+    VendingMachine m(2, 20);
 
-    cout<<"\n1. select item without any coin\n";
-    machine.selectItem();               //not allowed, stays in NO_COIN
+    m.selectItem();                     //rejected, no coin yet
+    m.insertCoin(10);
+    m.selectItem();                     //rejected, not enough
+    m.insertCoin(10);
+    m.selectItem();
+    m.dispense();
+    m.status();                         //NO_COIN, 1 item left
 
-    cout<<"\n2. insert $10 and try to select\n";
-    machine.insertCoin(10);
-    machine.selectItem();               //insufficient, stays in HAS_COIN
+    m.insertCoin(30);
+    m.selectItem();
+    m.dispense();                       //change = 10
+    m.status();                         //SOLD_OUT
 
-    cout<<"\n3. insert $10 more, select and dispense\n";
-    machine.insertCoin(10);
-    machine.selectItem();
-    machine.dispense();
-    machine.status();                   //back to NO_COIN, 1 item left
-
-    cout<<"\n4. buy the last item with $30 (change expected)\n";
-    machine.insertCoin(30);
-    machine.selectItem();
-    machine.dispense();
-    machine.status();                   //SOLD_OUT now
-
-    cout<<"\n5. try to use a sold out machine, then refill\n";
-    machine.insertCoin(20);             //not allowed
-    machine.refill(5);
-    machine.status();                   //NO_COIN again
-
-    cout<<"\n6. insert a coin and take it back\n";
-    machine.insertCoin(20);
-    machine.returnCoin();
-    machine.status();
-
+    m.insertCoin(20);                   //rejected
+    m.refill(5);
+    m.status();                         //NO_COIN
     return 0;
 }
