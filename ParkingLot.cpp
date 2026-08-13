@@ -1,30 +1,38 @@
 // Single-floor parking lot.
-// Patterns: Singleton (ParkingLot), Strategy (FeeStrategy, PaymentStrategy)
+// Patterns: Singleton (ParkingManager), Strategy (FeeStrategy, PaymentStrategy)
 #include<bits/stdc++.h>
 using namespace std;
 
-enum class VehicleType { BIKE, CAR, TRUCK };
+/*
+parking lot - user journey:
+1. vehicle enters -> gets a spot assigned -> parks; no spot free, no entry
+2. comes back to its spot -> pays fee -> exits
+3. single floor, 3 vehicle types, rate depends on the type
+*/
+
+enum class VehicleType { CAR, BIKE, TRUCK };
 
 string toString(VehicleType t) {
-    if (t == VehicleType::BIKE) return "Bike";
     if (t == VehicleType::CAR) return "Car";
+    if (t == VehicleType::BIKE) return "Bike";
     return "Truck";
 }
 
 struct Vehicle {
     string plate;
     VehicleType type;
-    Vehicle(string plate, VehicleType t) : plate(plate), type(t) {}
+
+    Vehicle(string plate, VehicleType type) : plate(plate), type(type) {}
 };
 
-// ---- Strategy: how fee is calculated ----
+// ---- Strategy: how the fee is calculated ----
 class FeeStrategy {
 public:
     virtual ~FeeStrategy() = default;
     virtual double calculateFee(VehicleType type, time_t entryTime, time_t exitTime) const = 0;
 };
 
-class HourlyRateFeeStrategy : public FeeStrategy {
+class HourlyFee : public FeeStrategy {
 public:
     double calculateFee(VehicleType type, time_t entryTime, time_t exitTime) const override {
         double hours = max(1.0, ceil(difftime(exitTime, entryTime) / (60.0 * 60))); // minimum 1 hour billed
@@ -40,18 +48,18 @@ public:
     virtual void pay(double amount) = 0;
 };
 
-class CashPayment : public PaymentStrategy {
+class PayByCash : public PaymentStrategy {
 public:
-    void pay(double amount) override { cout << "Paid $" << amount << " in cash.\n"; }
+    void pay(double amount) override { cout << "Paid in cash = $" << amount << "\n"; }
 };
 
-class CardPayment : public PaymentStrategy {
+class PayByCard : public PaymentStrategy {
 public:
-    void pay(double amount) override { cout << "Paid $" << amount << " by card.\n"; }
+    void pay(double amount) override { cout << "Paid using card = $" << amount << "\n"; }
 };
 
-// ---- A single parking spot. No Ticket class: the spot itself remembers
-// ---- who's parked and when, so the spotId IS your ticket. ----
+// ---- A single spot. No Ticket class: the spot remembers who's parked and
+// ---- when, so the spot id IS your ticket. ----
 class ParkingSpot {
 public:
     int id;
@@ -63,29 +71,31 @@ public:
     ParkingSpot(int id, VehicleType type) : id(id), type(type) {}
 
     void park(Vehicle v) {
-        if (occupied) throw runtime_error("Spot already occupied");
-        if (v.type != type) throw runtime_error("Vehicle type does not match spot type");
         parkedVehicle = v;
         entryTime = time(nullptr);
         occupied = true;
     }
 
-    void vacate() { occupied = false; }
+    void vacate() {
+        parkedVehicle = {"", VehicleType::CAR};
+        entryTime = 0;
+        occupied = false;
+    }
 };
 
-// ---- Singleton: exactly one parking lot, one floor's worth of spots. ----
-class ParkingLot {
+// ---- Singleton: exactly one lot, one floor's worth of spots. ----
+class ParkingManager {
     vector<ParkingSpot> spots_;
-    HourlyRateFeeStrategy feeStrategy_;
+    HourlyFee feeStrategy_;
 
-    ParkingLot() = default;
+    ParkingManager() = default;
 
 public:
-    ParkingLot(const ParkingLot&) = delete;
-    ParkingLot& operator=(const ParkingLot&) = delete;
+    ParkingManager(const ParkingManager&) = delete;
+    ParkingManager& operator=(const ParkingManager&) = delete;
 
-    static ParkingLot& instance() {
-        static ParkingLot lot;
+    static ParkingManager& instance() {
+        static ParkingManager lot;
         return lot;
     }
 
@@ -122,7 +132,7 @@ public:
 
 // ---- Demo ----
 int main() {
-    ParkingLot& lot = ParkingLot::instance();
+    ParkingManager& lot = ParkingManager::instance();
 
     lot.addSpot(VehicleType::CAR);    // spot 1
     lot.addSpot(VehicleType::BIKE);   // spot 2
@@ -134,8 +144,8 @@ int main() {
     lot.parkVehicle(car);   // -> spot 1
     lot.parkVehicle(bike);  // -> spot 2
 
-    CardPayment card;
-    CashPayment cash;
+    PayByCard card;
+    PayByCash cash;
     lot.exitVehicle(1, card);  // pay for the car
     lot.exitVehicle(2, cash);  // pay for the bike
 
