@@ -22,6 +22,8 @@
 #include <unordered_map>
 #include <vector>
 
+using namespace std;
+
 struct Occurrence {
     int chapter;
     int line;    // 0-based, within the chapter
@@ -31,57 +33,57 @@ struct Occurrence {
 // "Harry's wand" -> (harry,0) (s,6) (wand,8)
 // "\"HARRY!\""   -> (harry,1)
 // "Harrying"     -> (harrying,0)
-std::vector<std::pair<std::string, int>> tokenize(const std::string& line) {
-    std::vector<std::pair<std::string, int>> tokens;
-    for (size_t i = 0; i < line.size();) {
-        if (!std::isalnum(static_cast<unsigned char>(line[i]))) {
+vector<pair<string, int>> tokenize(const string& line) {
+    vector<pair<string, int>> tokens;
+    for (int i = 0; i < (int)line.size();) {
+        if (!isalnum((unsigned char)line[i])) {
             ++i;
             continue;
         }
-        const size_t start = i;
-        std::string word;
-        while (i < line.size() && std::isalnum(static_cast<unsigned char>(line[i])))
-            word += static_cast<char>(std::tolower(static_cast<unsigned char>(line[i++])));
-        tokens.emplace_back(word, static_cast<int>(start));
+        int start = i;
+        string word;
+        while (i < (int)line.size() && isalnum((unsigned char)line[i]))
+            word += tolower((unsigned char)line[i++]);
+        tokens.push_back({word, start});
     }
     return tokens;
 }
 
 class Book {
 public:
-    Book(std::string title, const std::vector<std::string>& characters) : title_(std::move(title)) {
-        for (const std::string& name : characters) {
-            isCharacter_[lower(name)] = name;  // normalized form -> canonical form
+    Book(string title, const vector<string>& characters) : title_(title) {
+        for (const string& name : characters) {
+            isCharacter_[normalize(name)] = name;  // normalized form -> canonical form
             total_[name] = 0;
         }
     }
 
-    const std::string& title() const { return title_; }
+    const string& title() const { return title_; }
 
     // F1 -- add a chapter and index it in one pass. O(total characters).
-    void addChapter(const std::string& chapterTitle, const std::vector<std::string>& lines) {
-        const int chapter = static_cast<int>(chapterTitles_.size());
+    void addChapter(const string& chapterTitle, const vector<string>& lines) {
+        int chapter = (int)chapterTitles_.size();
         chapterTitles_.push_back(chapterTitle);
-        for (int i = 0; i < static_cast<int>(lines.size()); ++i) {
+        for (int i = 0; i < (int)lines.size(); ++i) {
             for (const auto& [word, offset] : tokenize(lines[i])) {
                 auto it = isCharacter_.find(word);
                 if (it == isCharacter_.end()) continue;
-                const std::string& name = it->second;
+                const string& name = it->second;
                 ++total_[name];
                 ++byChapter_[name][chapter];
-                occurrences_[name].push_back(Occurrence{chapter, i, offset});
+                occurrences_[name].push_back({chapter, i, offset});
             }
         }
     }
 
     // F3 -- O(1).
-    int mentionCount(const std::string& name) const {
+    int mentionCount(const string& name) const {
         auto it = total_.find(name);
         return it == total_.end() ? 0 : it->second;
     }
 
     // F4 -- O(1).
-    int mentionCount(const std::string& name, int chapter) const {
+    int mentionCount(const string& name, int chapter) const {
         auto it = byChapter_.find(name);
         if (it == byChapter_.end()) return 0;
         auto jt = it->second.find(chapter);
@@ -89,33 +91,33 @@ public:
     }
 
     // F5 -- already in reading order, because indexing walked the book in order.
-    std::vector<Occurrence> occurrences(const std::string& name) const {
+    vector<Occurrence> occurrences(const string& name) const {
         auto it = occurrences_.find(name);
-        return it == occurrences_.end() ? std::vector<Occurrence>{} : it->second;
+        return it == occurrences_.end() ? vector<Occurrence>{} : it->second;
     }
 
     // F6 -- O(C log C) over a small character set.
-    std::vector<std::pair<std::string, int>> topCharacters(int k) const {
-        std::vector<std::pair<std::string, int>> all(total_.begin(), total_.end());
-        std::sort(all.begin(), all.end(), [](const auto& a, const auto& b) {
+    vector<pair<string, int>> topCharacters(int k) const {
+        vector<pair<string, int>> all(total_.begin(), total_.end());
+        sort(all.begin(), all.end(), [](const auto& a, const auto& b) {
             return a.second != b.second ? a.second > b.second : a.first < b.first;
         });
-        if (static_cast<int>(all.size()) > k) all.resize(k);
+        if ((int)all.size() > k) all.resize(k);
         return all;
     }
 
 private:
-    static std::string lower(const std::string& s) {
-        auto tokens = tokenize(s);
-        return tokens.size() == 1 ? tokens[0].first : std::string{};  // single-word names only
+    static string normalize(const string& name) {
+        vector<pair<string, int>> tokens = tokenize(name);
+        return tokens.size() == 1 ? tokens[0].first : string{};  // single-word names only
     }
 
-    std::string title_;
-    std::vector<std::string> chapterTitles_;
-    std::unordered_map<std::string, std::string> isCharacter_;
-    std::unordered_map<std::string, int> total_;
-    std::unordered_map<std::string, std::map<int, int>> byChapter_;
-    std::unordered_map<std::string, std::vector<Occurrence>> occurrences_;
+    string title_;
+    vector<string> chapterTitles_;
+    unordered_map<string, string> isCharacter_;
+    unordered_map<string, int> total_;
+    unordered_map<string, map<int, int>> byChapter_;
+    unordered_map<string, vector<Occurrence>> occurrences_;
 };
 
 // ------------------------------------------------------------------- Driver
@@ -145,7 +147,7 @@ int main() {
     assert(book.mentionCount("Ron", 1) == 2);
 
     // F5 -- positions, in reading order.
-    std::vector<Occurrence> harry = book.occurrences("Harry");
+    vector<Occurrence> harry = book.occurrences("Harry");
     assert(harry.size() == 5);
     assert(harry[0].chapter == 0 && harry[0].line == 0 && harry[0].offset == 0);
     assert(harry[1].line == 1 && harry[2].line == 1);  // both shouts, same line
@@ -158,7 +160,7 @@ int main() {
     assert(top[0].first == "Harry" && top[0].second == 5);
     assert(top[1].first == "Ron" && top[1].second == 3);
 
-    std::cout << "All assertions passed.\n\n";
-    for (const auto& [name, n] : book.topCharacters(10)) std::cout << name << ": " << n << "\n";
+    cout << "All assertions passed.\n\n";
+    for (const auto& [name, n] : book.topCharacters(10)) cout << name << ": " << n << "\n";
     return 0;
 }
