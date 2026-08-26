@@ -2,6 +2,7 @@
 
 **Format:** 45–60 min low-level design round (Amazon-style)
 **Deliverable from the candidate:** class model + working code for the core index, driven by a small `main`/test harness. No database, no framework, no network.
+**Reference implementation:** [`book_mention_index.cpp`](./book_mention_index.cpp)
 
 ---
 
@@ -24,25 +25,25 @@ Let the candidate ask clarifying questions before writing anything. The ambiguit
 | # | Requirement |
 |---|---|
 | F1 | Add a book: id, title, author, and its ordered lines grouped into chapters. |
-| F2 | Register the characters of a book (e.g. `Harry`, `Ron`, `Draco`), each with a canonical name. |
+| F2 | Register the characters of a book (`Harry`, `Ron`, `Draco`), each identified by a single-word name. |
 | F3 | `mentionCount(bookId, characterId)` → total number of times that character is mentioned in the book. |
 | F4 | `mentionCount(bookId, characterId, chapterId)` → count scoped to one chapter. |
-| F5 | `occurrences(bookId, characterId)` → the positions of every mention: `(chapterId, lineNumber, startOffset)`, in reading order. |
+| F5 | `occurrences(bookId, characterId)` → the position of every mention: `(chapterId, lineNumber, startOffset)`, in reading order. |
 | F6 | `topCharacters(bookId, k)` → the k most-mentioned characters, descending. |
 
 ### Should have (extensions, ~15 min — pick 2)
 
 | # | Requirement |
 |---|---|
-| F7 | **Aliases.** A character has many surface forms: `Harry`, `Potter`, `Harry Potter`, `The Boy Who Lived`. All of them count toward the same character. Multi-word aliases must match across a single line. |
-| F8 | **Longest-match, no double counting.** The line `Harry Potter waved.` is **one** mention of Harry, not three (`Harry`, `Potter`, `Harry Potter`). Overlapping aliases resolve to the longest match. |
-| F9 | **Co-occurrence.** `linesWith(bookId, [harry, ron])` → lines where all of the given characters appear together. Used for "relationship" analytics. |
-| F10 | **Mutability.** `editLine`, `insertLine`, `deleteLine` on an already-indexed book. Queries after the edit must reflect it, without re-indexing the whole book. |
-| F11 | **Multi-book / global query.** `mentionCount(characterId)` across the whole library (a character can span a series). |
+| F7 | **Late registration.** A character is added *after* the book is indexed. Indexing must cover only that character, not rebuild the book. |
+| F8 | **Co-occurrence.** `linesContainingAll(bookId, [ron, draco])` → lines where all of the given characters appear together. Used for relationship analytics. |
+| F9 | **Mutability.** `editLine`, `insertLine`, `deleteLine` on an already-indexed book. Queries afterwards must reflect the edit, without re-indexing the whole book. |
+| F10 | **Multi-book.** `mentionCount(characterId)` across the whole library — a character spans a series. |
+| F11 | **A second index type.** Index spells or locations the same way, without touching the book/ingestion classes. |
 
 ### Explicitly out of scope
 
-Persistence, HTTP layer, auth, pagination of results, NLP-grade entity resolution (pronoun resolution, "he/she" → character, disambiguating two characters named *Weasley*). Say this out loud if the candidate drifts there.
+Persistence, HTTP layer, auth, result pagination, and anything NLP-grade: pronoun resolution (`he` → Harry), multi-word or nickname resolution (`The Boy Who Lived` → Harry), disambiguating two characters who share a surname. Characters are single-word names, given up front. Say this out loud if the candidate drifts there.
 
 ---
 
@@ -50,24 +51,24 @@ Persistence, HTTP layer, auth, pagination of results, NLP-grade entity resolutio
 
 A strong candidate surfaces most of these **before** coding. Reveal an answer only when asked.
 
-1. **Is matching case-sensitive?** → No. `harry` and `Harry` both count.
-2. **Word boundaries?** → Yes. `Harry's` and `Harry,` count; `Harrypotter` and `Harrying` do **not**. Punctuation and apostrophes must not break a match.
-3. **Are character names known up front?** → Yes, characters are registered per book before/at ingestion. (Follow-up: what changes if a character is added *after* indexing? Expected answer: index only that character over the stored lines, not a full rebuild.)
-4. **Multiple mentions on one line?** → All count. `"Harry, Harry!" said Ron.` is 2 for Harry, 1 for Ron.
-5. **Do aliases overlap between characters?** → Assume no for the core; ask what they'd do if `Potter` were ambiguous between Harry and his father (expected: reject at registration, or attach a disambiguation policy).
-6. **Read/write ratio?** → Write-once-read-many. Precompute at ingest; queries must not scan the text.
-7. **Book size?** → Up to ~10⁶ lines, ~10⁷ words; number of characters per book is small (< 1000). Library up to 10⁵ books. Must fit the working set of one book in memory.
-8. **Concurrency?** → Concurrent readers, occasional writer. Bring it up in the extension phase.
+1. **Is matching case-sensitive?** → No. `harry`, `Harry`, and `HARRY` all count.
+2. **Word boundaries?** → Yes, and this is the crux. `Harry's` and `(Harry)` and `Harry—Ron` count; `Harrying`, `Harrys`, and `Charry` do **not**.
+3. **Multiple mentions on one line?** → All count. `"Harry, Harry!" said Ron.` is 2 for Harry, 1 for Ron.
+4. **Are character names known up front?** → Yes at ingest, but see F7 — they can also arrive later.
+5. **What if a character's name is also a common word** (`Bill`, `Sirius`, `Rose`)? → Out of scope for correctness, but a good candidate flags that the index will over-count and that disambiguation needs context the index doesn't have.
+6. **Read/write ratio?** → Write-once-read-many. Precompute at ingest; queries must not scan text.
+7. **Book size?** → Up to ~10⁶ lines / ~10⁷ words; characters per book < 1000; library up to 10⁵ books. One book's working set fits in memory.
+8. **Concurrency?** → Concurrent readers, occasional writer. Raise it in the extension phase.
 
 ---
 
 ## 4. Non-functional requirements
 
-- **NF1 — Query latency.** `mentionCount` must be O(1); it must not depend on book length. `occurrences` is O(number of results).
-- **NF2 — Ingestion.** One pass over the text: O(total characters × cost per position), **not** O(characters × number of aliases). Naïvely running `line.contains(alias)` for every alias on every line is the failure mode to probe.
-- **NF3 — Memory.** Storing every occurrence is acceptable; storing a per-line copy of the text per character is not.
-- **NF4 — Extensibility.** Adding a new *kind* of index (spells, locations, potions) must not require modifying the book/ingestion classes. Look for an `Analyzer`/`IndexBuilder` abstraction rather than `if (type == CHARACTER)`.
-- **NF5 — Thread safety.** Concurrent `mentionCount` calls are safe; an in-flight edit must not expose a partially updated index.
+- **NF1 — Query latency.** `mentionCount` must be **O(1)** — independent of book length. `occurrences` is O(number of results).
+- **NF2 — Ingestion.** A single pass over the text: **O(total characters)**, not O(text × number of registered characters). Running `line.find(name)` for every character on every line is the failure mode to probe.
+- **NF3 — Memory.** Storing every occurrence position is acceptable. Storing a per-character copy of the text is not.
+- **NF4 — Extensibility.** Adding a second index type (spells, locations, potions) must not modify the book or ingestion classes. Look for a `Tokenizer` / `Analyzer` seam rather than `if (type == CHARACTER)`.
+- **NF5 — Thread safety.** Concurrent `mentionCount` calls are safe; an in-flight edit never exposes a half-updated index.
 
 ---
 
@@ -75,58 +76,57 @@ A strong candidate surfaces most of these **before** coding. Reveal an answer on
 
 | Minutes | Phase | What to look for |
 |---|---|---|
-| 0–5 | Restate + clarify | Does the candidate ask about case, boundaries, aliases, read/write ratio? |
-| 5–15 | Class model on the board | Clean separation: domain (`Book`, `Chapter`, `Line`, `Character`) vs. indexing (`Tokenizer`, `IndexBuilder`, `MentionIndex`) vs. service/API (`LibraryService`). |
-| 15–35 | Code the core | `addBook`, index build, `mentionCount`, `occurrences`. Compiling, runnable, with a couple of asserts. |
-| 35–50 | Pick 2 extensions | Aliases + longest-match, or mutability, or co-occurrence. |
-| 50–60 | Complexity, tests, trade-offs | Big-O of ingest and each query; the edge cases in §7; what breaks at 100× scale. |
+| 0–5 | Restate + clarify | Do they ask about case, boundaries, read/write ratio? |
+| 5–15 | Class model on the board | Clean separation: domain (`Book`, `Chapter`, `Line`, `Character`) vs. matching (`Tokenizer`) vs. index (`BookIndex`) vs. API (`LibraryService`). |
+| 15–35 | Code the core | `addBook`, index build, `mentionCount`, `occurrences`, running, with a few asserts. |
+| 35–50 | Pick 2 extensions | Mutability is the richest; co-occurrence and late registration are the quickest. |
+| 50–60 | Complexity, tests, trade-offs | Big-O of ingest and each query; edge cases in §7; what breaks at 100×. |
 
 ---
 
 ## 6. Expected API surface
 
-The candidate may name things differently; the shape matters, not the names.
+Names may differ; the shape matters.
 
-```java
-// ---- Domain ----
-class Book {
-    BookId id; String title; String author;
-    List<Chapter> chapters;
-}
-class Chapter { ChapterId id; String title; List<String> lines; }
+```cpp
+using CharacterId = int;
+using ChapterId   = int;
+using BookId      = std::string;
 
-class Character {
-    CharacterId id;
-    String canonicalName;      // "Harry Potter"
-    Set<String> aliases;       // "Harry", "Potter", "The Boy Who Lived"
-}
+struct Character  { CharacterId id; std::string name; };          // single word
+struct Occurrence { ChapterId chapter; int line; int startOffset; int length; };
+struct LinePos    { ChapterId chapter; int line; };
 
-// ---- Position of a single mention ----
-record Occurrence(ChapterId chapterId, int lineNumber, int startOffset, int length) {}
+struct Token { std::string text; int start; int length; };        // normalized
 
-// ---- Index (one per book) ----
-interface MentionIndex {
-    int count(CharacterId c);
-    int count(CharacterId c, ChapterId chapter);
-    List<Occurrence> occurrences(CharacterId c);
-    List<CharacterId> topCharacters(int k);
-    Set<Integer> linesContainingAll(List<CharacterId> cs);   // F9
-}
+class Tokenizer {                                                 // the NF4 seam
+public:
+    virtual std::vector<Token> tokenize(const std::string& line) const = 0;
+};
 
-// ---- Service (the public entry point) ----
-interface LibraryService {
-    void addBook(Book book, List<Character> characters);
-    void registerCharacter(BookId bookId, Character c);      // post-hoc registration
-    int  mentionCount(BookId bookId, CharacterId c);
-    int  mentionCount(BookId bookId, CharacterId c, ChapterId ch);
-    List<Occurrence> occurrences(BookId bookId, CharacterId c);
-    List<CharacterId> topCharacters(BookId bookId, int k);
+class BookIndex {
+public:
+    void registerCharacter(const Character&);                     // F2, F7
+    void addChapter(ChapterId, std::string title, const std::vector<std::string>& lines);
 
-    // F10 — mutation
-    void editLine(BookId bookId, ChapterId ch, int lineNumber, String newText);
-    void insertLine(BookId bookId, ChapterId ch, int lineNumber, String text);
-    void deleteLine(BookId bookId, ChapterId ch, int lineNumber);
-}
+    int  count(CharacterId) const;                                // F3, O(1)
+    int  count(CharacterId, ChapterId) const;                     // F4, O(1)
+    std::vector<Occurrence> occurrences(CharacterId) const;       // F5
+    std::vector<std::pair<CharacterId,int>> topCharacters(int k) const;         // F6
+    std::vector<LinePos> linesContainingAll(const std::vector<CharacterId>&) const;  // F8
+
+    void editLine(ChapterId, int lineNumber, const std::string& newText);       // F9
+    void insertLine(ChapterId, int lineNumber, const std::string& text);
+    void deleteLine(ChapterId, int lineNumber);
+};
+
+class LibraryService {                                            // public entry point
+public:
+    void addBook(const BookId&, title, author, characterNames, chapters);
+    int  mentionCount(const BookId&, CharacterId) const;
+    int  mentionCount(CharacterId) const;                         // F10, whole library
+    BookIndex& book(const BookId&);
+};
 ```
 
 ---
@@ -134,74 +134,78 @@ interface LibraryService {
 ## 7. Edge cases to raise if the candidate doesn't
 
 1. `"Harry, Harry!"` — repeats on one line.
-2. `Harry's wand` / `(Harry)` / `Harry—Ron` — punctuation adjacency must still match.
-3. `Harrying`, `Harrys`, `Charry` — must **not** match (word-boundary check).
-4. `Harry Potter` — one mention, not three (F8 longest-match).
-5. `HARRY` in dialogue shouting — case-insensitive match.
-6. Alias that is a prefix of another alias: `Ron` vs `Ronald`.
-7. Alias spanning a line break: `"Harry\nPotter"` — decide and state the policy (recommended: matching does not cross line boundaries; call it out as a known limitation).
-8. Character registered **after** the book is indexed.
-9. Empty book / character with zero mentions → must return 0, not throw.
-10. `insertLine` shifting every downstream line number — how do stored occurrences stay correct?
-11. Unicode / accented names (`Fleur Delacour`) — normalization.
+2. `Harry's wand`, `(Harry)`, `Harry—Ron` — punctuation adjacency must still match.
+3. `Harrying`, `Harrys`, `Charry` — must **not** match. This is the single most common bug.
+4. `HARRY` shouted in dialogue — case-insensitive.
+5. `Ron` vs `Ronald` — distinct tokens, distinct characters; no prefix matching.
+6. A character registered **after** the book was indexed (F7).
+7. `insertLine` shifting every downstream line number — how do stored occurrence positions stay correct?
+8. `editLine` removing the last mention of a character — count must go to 0, not stay stale.
+9. Empty book, or a character with zero mentions → return 0 / empty, never throw.
+10. Unicode names (`Fleur`, `Krum`) — a byte-oriented `isalnum` splits accented characters; state the limitation.
+11. A name appearing in the chapter *title* — indexed or not? Pick a policy and be consistent.
 
 ---
 
 ## 8. Evaluation rubric
 
 **Strong hire**
-- Domain model separated from indexing; index is a strategy/plug-in, not baked into `Book`.
-- Ingestion is a single tokenizing pass; per-position lookup is a hash map or a trie/Aho-Corasick automaton for multi-word aliases. Explains *why* naïve per-alias scanning is O(text × aliases) and rejects it.
-- Precomputed counts → O(1) `mentionCount`; occurrence lists appended in reading order, so `occurrences` needs no sort.
-- Handles longest-match and word boundaries correctly, with tests.
-- For F10, re-indexes only the affected line and uses a stable line identity (or a per-line occurrence bucket) so a shifted line number doesn't invalidate the index.
-- Names the trade-offs: memory of full occurrence lists vs. counts only; trie build cost vs. query speed; immutability vs. incremental update.
+- Domain model separated from indexing; matching lives behind a `Tokenizer` interface, so a second index type is a new dictionary, not a new `if`.
+- Ingest is one tokenizing pass with a hash lookup per token → O(total characters). Explains *why* per-character substring scanning is O(text × characters) and rejects it.
+- Word boundaries fall out of the tokenizer rather than being special-cased — recognizes that "split on non-word characters, then lowercase" solves case, punctuation, possessives, and the `Harrying` false positive in one stroke.
+- Counts maintained incrementally on every write → `mentionCount` is genuinely O(1) even after edits.
+- For F9, understands that line-relative offsets survive line shifts and absolute line numbers do not, and picks a strategy for the derived positional data (rebuild lazily, or keep stable line ids).
+- Names the trade-offs: occurrence lists vs. counts only; eager vs. lazy positional state; per-book locking.
 
 **Hire**
-- Correct working core with a `Map<CharacterId, Integer>` count and a `Map<CharacterId, List<Occurrence>>`.
-- Tokenizes once per line and looks up tokens in an alias map (single-word aliases only), acknowledging multi-word as an extension.
-- Reasonable class boundaries; handles case and boundaries; can state complexities when asked.
+- Correct working core: `unordered_map<CharacterId,int>` for counts, `unordered_map<CharacterId, vector<Occurrence>>` for positions.
+- Tokenizes each line once and looks tokens up in a name→id map; handles case and boundaries.
+- Sensible class boundaries; can state complexities when asked.
 
 **No hire signals**
-- `mentionCount` scans the book on every call, and the candidate doesn't notice when asked about a 10⁶-line book.
-- `String.contains` / substring search per alias per line, with no word-boundary handling and no awareness of the `Harrying` false positive.
-- Counting logic embedded inside `Book` or a single 200-line god class; no seam for a second index type.
+- `mentionCount` scans the book on every call and they don't notice when asked about a 10⁶-line book.
+- `strstr` / `find` per character per line, no word-boundary handling, no awareness of the `Harrying` false positive.
+- Counting logic embedded in `Book`, or one 200-line god class with no seam for a second index type.
 - Cannot state the complexity of their own ingest loop.
-- Never asks a single clarifying question and codes against an invented spec.
+- Zero clarifying questions; codes against an invented spec.
 
 ---
 
-## 9. Reference design sketch (interviewer's notes — do not show the candidate)
+## 9. Reference design (interviewer's notes — do not show the candidate)
 
-**Core data structures, per book:**
+**Structures, per book:**
 
 ```
-countByCharacter        : Map<CharacterId, int>
-countByCharacterChapter : Map<CharacterId, Map<ChapterId, int>>
-occurrencesByCharacter  : Map<CharacterId, List<Occurrence>>      // append-only, reading order
-charactersByLine        : Map<LineId, Set<CharacterId>>           // powers F9 co-occurrence
-aliasTrie               : Aho-Corasick automaton over normalized aliases -> CharacterId
+nameToId    : unordered_map<normalized name, CharacterId>
+chapters    : vector<Chapter>, Chapter = { id, title, vector<Line> }
+Line        : { text, vector<Hit> }   Hit = { cid, startOffset, length }   // sorted by offset
+total       : unordered_map<CharacterId, int>                      // always exact
+byChapter   : unordered_map<CharacterId, unordered_map<ChapterId, int>>   // always exact
+occurrences : unordered_map<CharacterId, vector<Occurrence>>       // derived, reading order
+linesOf     : unordered_map<CharacterId, vector<LinePos>>          // derived, sorted
 ```
 
-**Ingest (`addBook`)** — for each chapter, for each line:
-normalize (lowercase, Unicode NFKC) → run the line through the automaton → keep only matches whose boundaries are non-word characters → resolve overlaps by preferring the longest match, then leftmost → append an `Occurrence`, bump both counters, and add to `charactersByLine`.
+**Ingest** — for each line: tokenize once (split on non-alphanumeric, lowercase), look each token up in `nameToId`, and on a hit append a `Hit` to the line and bump both counters. **O(total characters)**, independent of the number of characters registered. The tokenizer, not a regex, is what gives word boundaries.
 
-Cost: **O(total characters + number of matches)**, independent of the alias count. The single-word-only variant (tokenize the line, hash-lookup each token in `Map<String, CharacterId>`) is the acceptable simpler answer and is genuinely O(total characters) too — the automaton is what buys multi-word aliases.
+**The key insight for mutability (F9):** a `Hit` stores a *line-relative* offset, so it survives its line moving up or down. Only the derived structures (`occurrences`, `linesOf`) embed absolute line numbers. So: keep counts exact incrementally on every write (`editLine` = subtract old hits, rescan, add new hits — O(length of edited line)), mark the book dirty, and rebuild the positional structures on the next positional query in one ordered walk. Counts, the hot path, stay O(1) and always correct; positions, the rare path, are lazily materialized. A candidate who instead keeps stable `LineId`s and per-line occurrence buckets is equally right.
 
-**`topCharacters(k)`** — a size-k min-heap over `countByCharacter`: O(C log k), with C < 1000. A maintained sorted structure is over-engineering here; a candidate who justifies either is fine.
+**`topCharacters(k)`** — sort or a size-k min-heap over `total`: O(C log k) with C < 1000. A maintained sorted structure is over-engineering; accept either if justified.
 
-**Mutation (F10)** — the key insight is *line identity*. Give each line a stable `LineId` at insert time and keep `lineNumber` as a separate, derivable field; then `insertLine` doesn't invalidate stored occurrences. Bucket occurrences per line (`Map<LineId, List<Occurrence>>`) so `editLine` = subtract the old line's contribution from the counters, re-scan the new text, add the new contribution. O(length of the edited line).
+**`linesContainingAll`** — intersect the sorted `linesOf` vectors, smallest first: O(size of the smallest set).
 
-**Concurrency (NF5)** — a `ReadWriteLock` per book, or copy-on-write of the per-line bucket plus atomic counters. The point is that the candidate scopes locking to a book, not to the whole library.
+**Late registration (F7)** — add the name to `nameToId`, then walk lines and add hits for that one name only. O(book), once, for one character — not a rebuild.
 
-**Scaling beyond one machine** (only if there's time) — shard by `bookId`; the index is per-book, so it partitions cleanly. Counts are a natural fit for a precomputed materialized view; occurrence lists are the expensive part and can be recomputed on demand from stored text.
+**Concurrency (NF5)** — one `shared_mutex` per book: shared for counts and top-k, exclusive for writes and for queries that may materialize. The point is that locking is scoped to a book, not the library.
+
+**Scaling** (only if there's time) — the index is per-book, so it shards cleanly by `bookId`. Counts are a natural materialized view; occurrence lists are the expensive part and can be recomputed on demand from stored text.
 
 ---
 
 ## 10. Follow-up questions to stretch a strong candidate
 
-1. Character names are *not* given — infer them from the text. What changes? (Capitalization heuristics, frequency, an NER pass — and now the index must be rebuildable.)
-2. Support "how many times do Harry and Draco appear within 3 lines of each other?" — a proximity query over the occurrence lists (merge two sorted lists, two-pointer).
-3. A character is renamed mid-series (`Tom Riddle` → `Voldemort`). Merge two character indexes without a re-scan.
-4. The library has 10⁵ books and you must answer `topCharacters` across all of them. What do you precompute?
+1. Character names are *not* given — infer them from the text. What changes? (Capitalization and frequency heuristics, an NER pass, and now the index must be rebuildable.)
+2. "How many times do Harry and Draco appear within 3 lines of each other?" — a proximity query: two-pointer merge over two sorted occurrence lists.
+3. A character is renamed mid-series (`Riddle` → `Voldemort`). Merge two character indexes without re-scanning.
+4. `topCharacters` across all 10⁵ books. What do you precompute, and where does it live?
 5. Readers annotate books with their own private character lists. How do you avoid rebuilding a shared index per user?
+6. Now support two-word names after all. What breaks, and what is the smallest change that fixes it? (Tokenizer emits n-grams, or the dictionary becomes a trie / Aho-Corasick automaton — and now overlapping matches need a longest-match rule.)
