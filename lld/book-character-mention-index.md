@@ -2,7 +2,9 @@
 
 **Format:** 45–60 min low-level design round (Amazon-style)
 **Deliverable from the candidate:** class model + working code for the core index, driven by a small `main`/test harness. No database, no framework, no network.
-**Reference implementation:** [`book_mention_index.cpp`](./book_mention_index.cpp)
+**Reference implementations:**
+- [`book_mention_index.cpp`](./book_mention_index.cpp) — the core (F1–F6), ~90 lines of code. This is the bar for the 30-minute coding window.
+- [`book_mention_index_extended.cpp`](./book_mention_index_extended.cpp) — adds mutation, co-occurrence, late registration, multi-book counts and per-book locking. Material for the extension phase and the follow-ups; **not** what you should expect a candidate to type.
 
 ---
 
